@@ -1,4 +1,4 @@
-name: Build APK
+        name: Build APK
 
 on:
   push:
@@ -27,14 +27,18 @@ jobs:
           wget -q https://services.gradle.org/distributions/gradle-8.2-bin.zip -O /tmp/gradle.zip
           sudo unzip -q /tmp/gradle.zip -d /opt/
           echo "/opt/gradle-8.2/bin" >> $GITHUB_PATH
-          export PATH=$PATH:/opt/gradle-8.2/bin
+          export PATH="/opt/gradle-8.2/bin:$PATH"
           gradle --version
       
       - name: Accept SDK licenses
         run: yes | sdkmanager --licenses || true
       
       - name: Build Debug APK
-        run: gradle assembleDebug
+        env:
+          PATH: "/opt/gradle-8.2/bin:${{ env.PATH }}"
+        run: |
+          export PATH="/opt/gradle-8.2/bin:$PATH"
+          gradle assembleDebug
       
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -42,4 +46,5 @@ jobs:
           name: Smart-Clipboard-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          
           
