@@ -25,6 +25,13 @@ jobs:
       - name: Create local.properties
         run: echo "sdk.dir=/usr/local/lib/android/sdk" > local.properties
       
+      - name: Create gradle.properties
+        run: |
+          echo "org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8" > gradle.properties
+          echo "android.useAndroidX=true" >> gradle.properties
+          echo "android.nonTransitiveRClass=true" >> gradle.properties
+          cat gradle.properties
+      
       - name: Install Gradle
         run: |
           wget -q https://services.gradle.org/distributions/gradle-8.2-bin.zip -O /tmp/gradle.zip
