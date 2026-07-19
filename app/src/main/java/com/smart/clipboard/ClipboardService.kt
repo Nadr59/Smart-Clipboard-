@@ -84,7 +84,7 @@ class ClipboardService : Service() {
             try {
                 val dao = AppDatabase.getDatabase(applicationContext).clipboardDao()
                 val latest = dao.getLatestItem()
-                if (latest == null || latest.text != text || latest.isPinned) {
+                if (latest == null || (latest.text != text && !latest.isPinned)) {
                     dao.insertItem(ClipboardItem(text = text, timestamp = System.currentTimeMillis()))
                     dao.trimOldItems(100)
                 }
@@ -98,7 +98,7 @@ class ClipboardService : Service() {
         return START_STICKY
     }
 
-    override fun onBind(intent: IBinder?): IBinder? {
+    override fun onBind(intent: Intent?): IBinder? {
         return null
     }
 
