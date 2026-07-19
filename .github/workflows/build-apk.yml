@@ -13,13 +13,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Create gradle.properties
+      - name: Verify gradle.properties exists
         run: |
-          echo "org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8" > gradle.properties
-          echo "android.useAndroidX=true" >> gradle.properties
-          echo "android.nonTransitiveRClass=true" >> gradle.properties
-          echo "android.suppressUnsupportedCompileSdk=34" >> gradle.properties
           cat gradle.properties
+          ls -la gradle.properties
       
       - name: Create local.properties
         run: echo "sdk.dir=/usr/local/lib/android/sdk" > local.properties
