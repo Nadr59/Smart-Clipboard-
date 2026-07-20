@@ -1,6 +1,4 @@
-<resources>
-    <string name="app_name">Smart Clipboard</string>
-</resources>
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">الحافظة الذكية</string>
     <string name="accessibility_service_description">تستخدم الحافظة الذكية خدمة إمكانية الوصول لمراقبة عمليات النسخ وحفظها في السجل. هذه الخدمة لا تجمع أي بيانات شخصية.</string>
