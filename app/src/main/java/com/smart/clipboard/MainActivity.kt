@@ -4,8 +4,10 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings
 import android.view.Menu
 import android.view.MenuItem
@@ -22,7 +24,6 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.smart.clipboard.adapter.ClipboardAdapter
 import com.smart.clipboard.data.ClipboardItem
-import com.smart.clipboard.service.ClipboardAccessibilityService
 import com.smart.clipboard.service.ClipboardService
 import com.smart.clipboard.viewmodel.ClipboardViewModel
 
@@ -31,7 +32,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var viewModel: ClipboardViewModel
     private lateinit var adapter: ClipboardAdapter
     private lateinit var tvEmpty: TextView
-    private var dialogShown = false
+    private var setupDialogShown = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -74,9 +75,20 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        // تحقق مرة واحدة فقط من الخدمة
-        if (!isAccessibilityServiceEnabled() && !dialogShown) {
+        checkAllRequirements()
+    }
+
+    private fun checkAllRequirements() {
+        // 1. التحقق من خدمة إمكانية الوصول
+        if (!isAccessibilityServiceEnabled()) {
             showAccessibilityDialog()
+            return
+        }
+
+        // 2. التحقق من تجاهل تحسين البطارية
+        if (!isBatteryOptimizationIgnored()) {
+            showBatteryOptimizationDialog()
+            return
         }
     }
 
@@ -87,20 +99,31 @@ class MainActivity : AppCompatActivity() {
                 contentResolver,
                 Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
             ) ?: return false
-
-            val enabled = settingValue.split(":")
-            return enabled.any { it.equals(serviceName, ignoreCase = true) }
+            return settingValue.split(":").any {
+                it.equals(serviceName, ignoreCase = true)
+            }
         } catch (e: Exception) {
             return false
         }
     }
 
+    private fun isBatteryOptimizationIgnored(): Boolean {
+        return try {
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            pm.isIgnoringBatteryOptimizations(packageName)
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     private fun showAccessibilityDialog() {
-        dialogShown = true
+        if (setupDialogShown) return
+        setupDialogShown = true
+
         AlertDialog.Builder(this)
-            .setTitle("تفعيل خدمة المراقبة")
+            .setTitle("الخطوة 1: تفعيل خدمة المراقبة")
             .setMessage(
-                "لمراقبة عمليات النسخ في الخلفية، يجب تفعيل خدمة إمكانية الوصول.\n\n" +
+                "لمراقبة عمليات النسخ، يجب تفعيل خدمة إمكانية الوصول.\n\n" +
                 "الخطوات:\n" +
                 "1. اضغط 'فتح الإعدادات'\n" +
                 "2. ابحث عن 'الحافظة الذكية'\n" +
@@ -109,20 +132,45 @@ class MainActivity : AppCompatActivity() {
             )
             .setPositiveButton("فتح الإعدادات") { _, _ ->
                 try {
-                    val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                    startActivity(intent)
+                    startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                 } catch (e: Exception) {
                     Toast.makeText(this, "لا يمكن فتح الإعدادات", Toast.LENGTH_SHORT).show()
                 }
             }
-            .setNegativeButton("إلغاء") { dialog, _ ->
-                dialog.dismiss()
-            }
+            .setNegativeButton("إلغاء") { dialog, _ -> dialog.dismiss() }
+            .setOnDismissListener { setupDialogShown = false }
             .setCancelable(true)
-            .setOnDismissListener {
-                // إعادة تعيين للسماح بإظهارها مرة أخرى عند العودة
-                dialogShown = false
+            .show()
+    }
+
+    private fun showBatteryOptimizationDialog() {
+        if (setupDialogShown) return
+        setupDialogShown = true
+
+        AlertDialog.Builder(this)
+            .setTitle("الخطوة 2: السماح بالعمل في الخلفية")
+            .setMessage(
+                "لضمان استمرار العمل في الخلفية، يجب السماح للتطبيق بتجاهل تحسين البطارية.\n\n" +
+                "بدون هذا الإذن، سيتوقف التطبيق عن العمل بعد فترة."
+            )
+            .setPositiveButton("فتح الإعدادات") { _, _ ->
+                try {
+                    val intent = Intent(
+                        Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                        Uri.parse("package:$packageName")
+                    )
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    try {
+                        startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                    } catch (e2: Exception) {
+                        Toast.makeText(this, "لا يمكن فتح الإعدادات", Toast.LENGTH_SHORT).show()
+                    }
+                }
             }
+            .setNegativeButton("إلغاء") { dialog, _ -> dialog.dismiss() }
+            .setOnDismissListener { setupDialogShown = false }
+            .setCancelable(true)
             .show()
     }
 
@@ -151,7 +199,6 @@ class MainActivity : AppCompatActivity() {
         menuInflater.inflate(R.menu.main_menu, menu)
         val searchItem = menu?.findItem(R.id.action_search)
         val searchView = searchItem?.actionView as? SearchView
-
         searchView?.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
             override fun onQueryTextSubmit(query: String?): Boolean = false
             override fun onQueryTextChange(newText: String?): Boolean {
