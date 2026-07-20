@@ -1,6 +1,5 @@
 package com.smart.clipboard
 
-import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -11,7 +10,6 @@ import android.provider.Settings
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
-import android.view.accessibility.AccessibilityManager
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -24,6 +22,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.smart.clipboard.adapter.ClipboardAdapter
 import com.smart.clipboard.data.ClipboardItem
+import com.smart.clipboard.service.ClipboardAccessibilityService
 import com.smart.clipboard.service.ClipboardService
 import com.smart.clipboard.viewmodel.ClipboardViewModel
 
@@ -32,6 +31,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var viewModel: ClipboardViewModel
     private lateinit var adapter: ClipboardAdapter
     private lateinit var tvEmpty: TextView
+    private var dialogShown = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -70,42 +70,60 @@ class MainActivity : AppCompatActivity() {
         }
 
         startClipboardService()
-
-        // التحقق من خدمة إمكانية الوصول
-        checkAccessibilityService()
-    }
-
-    private fun checkAccessibilityService() {
-        if (!isAccessibilityServiceEnabled()) {
-            AlertDialog.Builder(this)
-                .setTitle("تفعيل خدمة المراقبة")
-                .setMessage("لمراقبة عمليات النسخ في الخلفية، يجب تفعيل خدمة إمكانية الوصول.\n\nهذا ضروري لحفظ جميع النصوص المنسوخة حتى عند إغلاق التطبيق.")
-                .setPositiveButton("فتح الإعدادات") { _, _ ->
-                    val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                    startActivity(intent)
-                }
-                .setNegativeButton("لاحقاً") { dialog, _ ->
-                    dialog.dismiss()
-                }
-                .setCancelable(true)
-                .show()
-        }
-    }
-
-    private fun isAccessibilityServiceEnabled(): Boolean {
-        val am = getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
-        val enabledServices = am.getEnabledAccessibilityServiceList(
-            AccessibilityServiceInfo.FEEDBACK_ALL_MASK
-        )
-        return enabledServices.any {
-            it.resolveInfo.serviceInfo.packageName == packageName
-        }
     }
 
     override fun onResume() {
         super.onResume()
-        // تحديث القائمة عند العودة
-        checkAccessibilityService()
+        // تحقق مرة واحدة فقط من الخدمة
+        if (!isAccessibilityServiceEnabled() && !dialogShown) {
+            showAccessibilityDialog()
+        }
+    }
+
+    private fun isAccessibilityServiceEnabled(): Boolean {
+        try {
+            val serviceName = "${packageName}/.service.ClipboardAccessibilityService"
+            val settingValue = Settings.Secure.getString(
+                contentResolver,
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            ) ?: return false
+
+            val enabled = settingValue.split(":")
+            return enabled.any { it.equals(serviceName, ignoreCase = true) }
+        } catch (e: Exception) {
+            return false
+        }
+    }
+
+    private fun showAccessibilityDialog() {
+        dialogShown = true
+        AlertDialog.Builder(this)
+            .setTitle("تفعيل خدمة المراقبة")
+            .setMessage(
+                "لمراقبة عمليات النسخ في الخلفية، يجب تفعيل خدمة إمكانية الوصول.\n\n" +
+                "الخطوات:\n" +
+                "1. اضغط 'فتح الإعدادات'\n" +
+                "2. ابحث عن 'الحافظة الذكية'\n" +
+                "3. فعّل الخدمة\n" +
+                "4. ارجع للتطبيق"
+            )
+            .setPositiveButton("فتح الإعدادات") { _, _ ->
+                try {
+                    val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    Toast.makeText(this, "لا يمكن فتح الإعدادات", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("إلغاء") { dialog, _ ->
+                dialog.dismiss()
+            }
+            .setCancelable(true)
+            .setOnDismissListener {
+                // إعادة تعيين للسماح بإظهارها مرة أخرى عند العودة
+                dialogShown = false
+            }
+            .show()
     }
 
     private fun startClipboardService() {
