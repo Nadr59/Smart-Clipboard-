@@ -21,10 +21,18 @@ class ClipboardAccessibilityService : AccessibilityService() {
     private val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
     private val mainHandler = Handler(Looper.getMainLooper())
     private var lastSeenText: String? = null
+    private var isListenerRegistered = false
+
+    // مهمة تكرارية: إعادة تسجيل listener كل 30 ثانية
+    private val reRegisterRunnable = object : Runnable {
+        override fun run() {
+            ensureListenerActive()
+            mainHandler.postDelayed(this, 30_000) // كل 30 ثانية
+        }
+    }
 
     private val clipListener = ClipboardManager.OnPrimaryClipChangedListener {
         Log.d("ClipboardDebug", "Listener fired!")
-        // تأخير 200ms لأن أندرويد 10+ لا يسمح بالقراءة فوراً
         mainHandler.postDelayed({
             readAndSaveClipboard()
         }, 200)
@@ -32,12 +40,59 @@ class ClipboardAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        Log.d("ClipboardDebug", "=== Accessibility Service CONNECTED ===")
+        Log.d("ClipboardDebug", "=== Service CONNECTED ===")
 
         clipboardManager = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        clipboardManager.addPrimaryClipChangedListener(clipListener)
+        registerListener()
 
         // حفظ النص الحالي كمرجع
+        readCurrentSilently()
+
+        // بدء المهمة التكرارية
+        mainHandler.postDelayed(reRegisterRunnable, 30_000)
+    }
+
+    private fun registerListener() {
+        try {
+            if (isListenerRegistered) {
+                clipboardManager.removePrimaryClipChangedListener(clipListener)
+            }
+            clipboardManager.addPrimaryClipChangedListener(clipListener)
+            isListenerRegistered = true
+            Log.d("ClipboardDebug", "Listener registered")
+        } catch (e: Exception) {
+            Log.e("ClipboardDebug", "Register error", e)
+        }
+    }
+
+    private fun unregisterListener() {
+        try {
+            if (isListenerRegistered) {
+                clipboardManager.removePrimaryClipChangedListener(clipListener)
+                isListenerRegistered = false
+                Log.d("ClipboardDebug", "Listener unregistered")
+            }
+        } catch (e: Exception) {
+            Log.e("ClipboardDebug", "Unregister error", e)
+        }
+    }
+
+    /**
+     * التأكد أن listener لا يزال نشطاً
+     */
+    private fun ensureListenerActive() {
+        try {
+            Log.d("ClipboardDebug", "Re-registering listener (periodic check)")
+            unregisterListener()
+            registerListener()
+            // تحقق من الحافظة أيضاً
+            checkClipboardQuietly()
+        } catch (e: Exception) {
+            Log.e("ClipboardDebug", "Re-register error", e)
+        }
+    }
+
+    private fun readCurrentSilently() {
         try {
             val clip = clipboardManager.primaryClip
             if (clip != null && clip.itemCount > 0) {
@@ -50,11 +105,8 @@ class ClipboardAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // نتحقق من الحافظة عند أي حدث نصي
-        if (event?.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED ||
-            event?.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
-            checkClipboardQuietly()
-        }
+        // نفحص الحافظة عند أي تغيير في النص
+        checkClipboardQuietly()
     }
 
     private fun checkClipboardQuietly() {
@@ -73,22 +125,17 @@ class ClipboardAccessibilityService : AccessibilityService() {
     private fun readAndSaveClipboard() {
         try {
             val clipData = clipboardManager.primaryClip
-            Log.d("ClipboardDebug", "Reading clipboard: $clipData")
+            Log.d("ClipboardDebug", "Reading clipboard...")
             if (clipData != null && clipData.itemCount > 0) {
                 val text = clipData.getItemAt(0).text?.toString()
                 Log.d("ClipboardDebug", "Text: $text")
                 if (!text.isNullOrBlank() && text != lastSeenText) {
                     lastSeenText = text
                     saveToDatabase(text)
-                } else {
-                    Log.d("ClipboardDebug", "Skipped (duplicate or empty)")
                 }
             } else {
-                Log.d("ClipboardDebug", "clipData is null - trying delayed read")
-                // محاولة أخرى بعد 500ms
-                mainHandler.postDelayed({
-                    trySecondRead()
-                }, 500)
+                Log.d("ClipboardDebug", "clipData null, retrying...")
+                mainHandler.postDelayed({ trySecondRead() }, 500)
             }
         } catch (e: Exception) {
             Log.e("ClipboardDebug", "Read error", e)
@@ -98,7 +145,6 @@ class ClipboardAccessibilityService : AccessibilityService() {
     private fun trySecondRead() {
         try {
             val clipData = clipboardManager.primaryClip
-            Log.d("ClipboardDebug", "Second attempt: $clipData")
             if (clipData != null && clipData.itemCount > 0) {
                 val text = clipData.getItemAt(0).text?.toString()
                 if (!text.isNullOrBlank() && text != lastSeenText) {
@@ -135,22 +181,9 @@ class ClipboardAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         super.onDestroy()
-        try {
-            clipboardManager.removePrimaryClipChangedListener(clipListener)
-        } catch (_: Exception) {}
-        serviceJob.cancel()
         mainHandler.removeCallbacksAndMessages(null)
-    }
-
-    companion object {
-        var isRunning = false
-
-        fun getServiceClassName(context: Context): String {
-            return "${context.packageName}/.service.ClipboardAccessibilityService"
-        }
-    }
-
-    init {
-        isRunning = true
+        unregisterListener()
+        serviceJob.cancel()
+        Log.d("ClipboardDebug", "=== Service DESTROYED ===")
     }
 }
