@@ -1,16 +1,20 @@
 package com.smart.clipboard
 
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
+import android.view.accessibility.AccessibilityManager
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SearchView
 import androidx.appcompat.widget.Toolbar
@@ -66,6 +70,42 @@ class MainActivity : AppCompatActivity() {
         }
 
         startClipboardService()
+
+        // التحقق من خدمة إمكانية الوصول
+        checkAccessibilityService()
+    }
+
+    private fun checkAccessibilityService() {
+        if (!isAccessibilityServiceEnabled()) {
+            AlertDialog.Builder(this)
+                .setTitle("تفعيل خدمة المراقبة")
+                .setMessage("لمراقبة عمليات النسخ في الخلفية، يجب تفعيل خدمة إمكانية الوصول.\n\nهذا ضروري لحفظ جميع النصوص المنسوخة حتى عند إغلاق التطبيق.")
+                .setPositiveButton("فتح الإعدادات") { _, _ ->
+                    val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                    startActivity(intent)
+                }
+                .setNegativeButton("لاحقاً") { dialog, _ ->
+                    dialog.dismiss()
+                }
+                .setCancelable(true)
+                .show()
+        }
+    }
+
+    private fun isAccessibilityServiceEnabled(): Boolean {
+        val am = getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
+        val enabledServices = am.getEnabledAccessibilityServiceList(
+            AccessibilityServiceInfo.FEEDBACK_ALL_MASK
+        )
+        return enabledServices.any {
+            it.resolveInfo.serviceInfo.packageName == packageName
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // تحديث القائمة عند العودة
+        checkAccessibilityService()
     }
 
     private fun startClipboardService() {
@@ -95,10 +135,7 @@ class MainActivity : AppCompatActivity() {
         val searchView = searchItem?.actionView as? SearchView
 
         searchView?.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
-            override fun onQueryTextSubmit(query: String?): Boolean {
-                return false
-            }
-
+            override fun onQueryTextSubmit(query: String?): Boolean = false
             override fun onQueryTextChange(newText: String?): Boolean {
                 viewModel.setSearchQuery(newText.orEmpty())
                 return true
